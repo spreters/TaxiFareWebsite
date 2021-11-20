@@ -1,33 +1,63 @@
-from os import pardir
+# from os import pardir
 import streamlit as st
 import datetime
 import requests
+import pandas as pd
+from geopy.geocoders import Nominatim
 
-'''
-# TaxiFareModel
-### ***Predicting the Taxi Fare !***
----'''
 
-columns = st.columns(3)
-columns[0].write('##### Pickup Location')
-columns[1].write('##### Dropoff Location')
-columns[2].write('##### Date & Time Location')
+def find_coordinates(address):
+    geolocator = Nominatim(user_agent="my_request")
+    location = geolocator.geocode(address, addressdetails=True)
+    # return (location.address, location.latitude, location.longitude)
+    if location is None:
+        return None, None, None
+    raw, lat, lon = location.raw, location.latitude, location.longitude
+    road = raw['address'].get('road')
+    house_no = raw['address'].get('house_number', '')
+    postcode = raw['address'].get('postcode')
+    town = raw['address'].get('town', '')
+    city = raw['address'].get('city', town)
+    address_ = f"{road} {house_no} 👉[ {city} ]"
+    return address_, lat, lon
 
-pickup_longitude = columns[0].text_input('Longitude', 40.7614327)
-pickup_latitude = columns[0].text_input('Latitude', 73.9798156)
 
-dropoff_longitude = columns[1].text_input('Longitude', 40.6513111)
-dropoff_latitude = columns[1].text_input('Latitude', 73.8803331)
+## HEADER TEXT & IMAGE
+h1, h2 = st.columns((2, 1))
+h1.markdown('''
+    # ⚙️ TaxiFareModel
+    ### 🚖*** Predicting a Taxi Fare in New York ***🚖
+''')
+h2.image(
+    'https://upload.wikimedia.org/wikipedia/commons/c/cc/Taxi_picture.png')
+'''---'''
 
-pickup_date = columns[2].date_input('Date', datetime.datetime.now())
-pickup_time = columns[2].time_input('Time', datetime.datetime.now())
-# passenger_count = columns[2].text_input('No. of Passengers', 1)
 
+## INPUT FIELDS
+c1, c2 = st.columns((2, 1))
+c1.write('##### Travel Route')
+c2.write('##### Date & Time Location')
+address_from = c1.text_input('Traveling From...', 'Empire State Building')
+travel_from, pickup_latitude, pickup_longitude = find_coordinates(address_from)
+if travel_from is None:
+    c1.error('Could not find address ❌')
+else:
+    c1.success(travel_from)
+
+address_to = c1.text_input('Traveling to...', 'Soho NY', help='test help')
+travel_to, dropoff_latitude, dropoff_longitude = find_coordinates(address_to)
+if travel_to is None:
+    c1.error('Could not find address ❌')
+else:
+    c1.success(travel_to)
+
+pickup_date = c2.date_input('Date', datetime.datetime.now())
+pickup_time = c2.time_input('Time', datetime.datetime.now())
+
+
+## PREPARE INPUT DATA & REQUEST PRICE PREDICTION FROM API
 pickup_datetime = str(pickup_date) + " " + str(pickup_time)
-
-
 url = 'https://taxi-fare-predict-api2-rxitzlhk7a-lz.a.run.app/predict'
-
 params = {
     'pickup_datetime': pickup_datetime,
     'pickup_longitude': pickup_longitude,
@@ -36,15 +66,24 @@ params = {
     'dropoff_latitude': dropoff_latitude,
     'passenger_count': 2
 }
-
 response = requests.get(url, params=params)
+prediction = response.json().get("prediction", "❌ No Price ❌")
 
-prediction = response.json().get("prediction", "❌ No predicted Price found ❌")
 if isinstance(prediction, float):
     prediction = "$"+str(round(prediction, 2))
+    taxi_price = f'<b style="color:LightGreen; font-size: 50px;">{prediction}</b>'
+    map_df = pd.DataFrame([[pickup_latitude, pickup_longitude],
+                           [dropoff_latitude, dropoff_longitude]],
+                          columns=['lat', 'lon'])
+else:
+    taxi_price = f'<b style="color:Red; font-size: 30px;">{prediction}</b>'
+    map_df = None
 
 
+## PLOT MAP & PRINTOUT PRICE
 '''---'''
-columns2 = st.columns(3)
-columns2[2].metric('Estimated fare price', prediction)
+r1, r2 = st.columns((2, 1))
+r1.map(map_df)
+r2.write('Estimated fare price')
+r2.markdown(taxi_price, unsafe_allow_html=True)
 '''---'''
